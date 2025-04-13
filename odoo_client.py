@@ -2,7 +2,6 @@
 import xmlrpc.client
 import os
 from dotenv import load_dotenv
-import ssl
 from urllib.parse import urlparse, urlunparse
 
 class OdooClient:
@@ -29,17 +28,14 @@ class OdooClient:
             # Parsear y normalizar la URL
             parsed_url = urlparse(self.url)
             if not parsed_url.port:
-                # Si no se especifica puerto, usar 443 para HTTPS
-                parsed_url = parsed_url._replace(netloc=f"{parsed_url.netloc}:443")
+                # Si no se especifica puerto, usar 8069 para HTTP
+                parsed_url = parsed_url._replace(netloc=f"{parsed_url.netloc}:8069")
             base_url = urlunparse(parsed_url)
-            
-            # Configurar contexto SSL para permitir conexiones HTTPS
-            context = ssl._create_unverified_context()
             
             # Conexión al servicio common para autenticación
             common_url = f"{base_url}/xmlrpc/2/common"
             print(f"Conectando a: {common_url}")  # Debug
-            self.common = xmlrpc.client.ServerProxy(common_url, context=context, allow_none=True)
+            self.common = xmlrpc.client.ServerProxy(common_url, allow_none=True)
 
             # Verificar que el servidor está disponible
             try:
@@ -60,7 +56,7 @@ class OdooClient:
             # Conexión al servicio object para operaciones CRUD
             object_url = f"{base_url}/xmlrpc/2/object"
             print(f"Conectando a object: {object_url}")  # Debug
-            self.models = xmlrpc.client.ServerProxy(object_url, context=context, allow_none=True)
+            self.models = xmlrpc.client.ServerProxy(object_url, allow_none=True)
 
             # Verificar permisos básicos
             has_access = self.models.execute_kw(
