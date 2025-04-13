@@ -2,6 +2,7 @@
 import xmlrpc.client
 import os
 from dotenv import load_dotenv
+import ssl
 
 class OdooClient:
     def __init__(self):
@@ -24,8 +25,11 @@ class OdooClient:
             raise ValueError(f"Faltan variables de entorno: {', '.join(missing)}")
 
         try:
+            # Configurar contexto SSL para permitir conexiones HTTPS
+            context = ssl._create_unverified_context()
+            
             # Conexión al servicio common para autenticación
-            self.common = xmlrpc.client.ServerProxy(f'{self.url}/xmlrpc/2/common')
+            self.common = xmlrpc.client.ServerProxy(f'{self.url}/xmlrpc/2/common', context=context)
 
             # Verificar que el servidor está disponible
             version = self.common.version()
@@ -37,7 +41,7 @@ class OdooClient:
                 raise Exception("Autenticación fallida. Verifica las credenciales.")
 
             # Conexión al servicio object para operaciones CRUD
-            self.models = xmlrpc.client.ServerProxy(f'{self.url}/xmlrpc/2/object')
+            self.models = xmlrpc.client.ServerProxy(f'{self.url}/xmlrpc/2/object', context=context)
 
             # Verificar permisos básicos
             has_access = self.models.execute_kw(
