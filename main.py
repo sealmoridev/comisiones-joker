@@ -6,6 +6,11 @@ import pandas as pd
 from datetime import datetime, timedelta
 import io
 from odoo_client import OdooClient
+import os
+from dotenv import load_dotenv
+
+# Cargar variables de entorno
+load_dotenv()
 
 # 2. FUNCIONES DE UTILIDAD
 def format_currency(value, decimals=0):

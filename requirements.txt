@@ -1,4 +1,4 @@
 # requirements.txt
 streamlit==1.31.1
-xmlrpc.client
 python-dotenv==1.0.0
+pandas
