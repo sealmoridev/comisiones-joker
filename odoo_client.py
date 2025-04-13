@@ -3,6 +3,7 @@ import xmlrpc.client
 import os
 from dotenv import load_dotenv
 import ssl
+from urllib.parse import urlparse, urlunparse
 
 class OdooClient:
     def __init__(self):
@@ -25,15 +26,31 @@ class OdooClient:
             raise ValueError(f"Faltan variables de entorno: {', '.join(missing)}")
 
         try:
+            # Parsear y normalizar la URL
+            parsed_url = urlparse(self.url)
+            if not parsed_url.port:
+                # Si no se especifica puerto, usar 443 para HTTPS
+                parsed_url = parsed_url._replace(netloc=f"{parsed_url.netloc}:443")
+            base_url = urlunparse(parsed_url)
+            
             # Configurar contexto SSL para permitir conexiones HTTPS
             context = ssl._create_unverified_context()
             
             # Conexión al servicio common para autenticación
-            self.common = xmlrpc.client.ServerProxy(f'{self.url}/xmlrpc/2/common', context=context)
+            common_url = f"{base_url}/xmlrpc/2/common"
+            print(f"Conectando a: {common_url}")  # Debug
+            self.common = xmlrpc.client.ServerProxy(common_url, context=context, allow_none=True)
 
             # Verificar que el servidor está disponible
-            version = self.common.version()
-            print(f"Conectado a Odoo versión: {version['server_version']}")
+            try:
+                version = self.common.version()
+                if isinstance(version, dict) and 'server_version' in version:
+                    print(f"Conectado a Odoo versión: {version['server_version']}")
+                else:
+                    print(f"Respuesta de versión inesperada: {version}")
+            except Exception as e:
+                print(f"Error al obtener versión: {str(e)}")
+                raise
 
             # Autenticación y obtención del uid
             self.uid = self.common.authenticate(self.db, self.username, self.password, {})
@@ -41,7 +58,9 @@ class OdooClient:
                 raise Exception("Autenticación fallida. Verifica las credenciales.")
 
             # Conexión al servicio object para operaciones CRUD
-            self.models = xmlrpc.client.ServerProxy(f'{self.url}/xmlrpc/2/object', context=context)
+            object_url = f"{base_url}/xmlrpc/2/object"
+            print(f"Conectando a object: {object_url}")  # Debug
+            self.models = xmlrpc.client.ServerProxy(object_url, context=context, allow_none=True)
 
             # Verificar permisos básicos
             has_access = self.models.execute_kw(
