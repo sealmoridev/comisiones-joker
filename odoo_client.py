@@ -11,7 +11,7 @@ class OdooClient:
         load_dotenv()
 
         # Obtener configuración
-        self.url = os.getenv('ODOO_URL')
+        self.url = os.getenv('ODOO_URL', '').rstrip('/')  # Remover trailing slash
         self.db = os.getenv('ODOO_DB')
         self.username = os.getenv('ODOO_USERNAME')
         self.password = os.getenv('ODOO_PASSWORD')
@@ -28,9 +28,22 @@ class OdooClient:
         try:
             # Parsear y normalizar la URL
             parsed_url = urlparse(self.url)
+            if not parsed_url.scheme:
+                # Si no hay esquema, asumir https
+                self.url = f"https://{self.url}"
+                parsed_url = urlparse(self.url)
+            
+            # Si no hay puerto, agregar el puerto por defecto
             if not parsed_url.port:
-                parsed_url = parsed_url._replace(netloc=f"{parsed_url.netloc}:8069")
+                netloc = parsed_url.netloc
+                if parsed_url.scheme == 'https':
+                    netloc = f"{netloc}:443"
+                else:
+                    netloc = f"{netloc}:8069"
+                parsed_url = parsed_url._replace(netloc=netloc)
+            
             self.base_url = urlunparse(parsed_url)
+            print(f"URL base: {self.base_url}")  # Debug
             
             # Verificar la conexión y obtener la versión
             version = self._jsonrpc('/web/webclient/version_info')
@@ -58,6 +71,7 @@ class OdooClient:
         if not hasattr(self, 'session'):
             self.session = requests.Session()
             self.session.verify = False  # Para permitir certificados auto-firmados
+            requests.packages.urllib3.disable_warnings()  # Suprimir advertencias SSL
 
         headers = {
             'Content-Type': 'application/json',
@@ -70,9 +84,12 @@ class OdooClient:
             'id': None
         }
 
+        url = f"{self.base_url}{endpoint}"
+        print(f"Haciendo request a: {url}")  # Debug
+
         try:
             response = self.session.post(
-                f"{self.base_url}{endpoint}",
+                url,
                 headers=headers,
                 data=json.dumps(data),
                 timeout=30
