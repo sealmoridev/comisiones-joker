@@ -613,7 +613,18 @@ try:
         # Convertir a DataFrame
         df_plazas_grafico = pd.DataFrame(plazas_por_destino_grafico)
         
-        # Crear un gráfico de barras agrupadas para plazas
+        # Ordenar el DataFrame por el total de plazas (pagadas + disponibles) para mejor visualizaciu00f3n
+        # Primero, crear un DataFrame auxiliar para calcular el total por destino
+        df_total = df_plazas_grafico.copy()
+        df_total_por_destino = df_total.groupby('Destino')['Valor'].sum().reset_index()
+        df_total_por_destino = df_total_por_destino.sort_values('Valor', ascending=True)
+        
+        # Ordenar el DataFrame original segu00fan el orden de destinos
+        orden_destinos = df_total_por_destino['Destino'].tolist()
+        df_plazas_grafico['Destino'] = pd.Categorical(df_plazas_grafico['Destino'], categories=orden_destinos, ordered=True)
+        df_plazas_grafico = df_plazas_grafico.sort_values('Destino')
+        
+        # Crear un gru00e1fico de barras agrupadas para plazas con colores mu00e1s vibrantes
         fig = px.bar(df_plazas_grafico,
                     x='Destino',
                     y='Valor',
@@ -622,14 +633,14 @@ try:
                     text=df_plazas_grafico['Valor'].apply(lambda x: f"{int(x):,}".replace(',', '.')),
                     barmode='group',  # Agrupar barras por destino
                     color_discrete_map={
-                        'Plazas Pagadas': '#43A047',  # Verde para plazas pagadas
-                        'Plazas Disponibles': '#FF9800'  # Naranja para plazas disponibles
+                        'Plazas Pagadas': 'rgba(0, 128, 0, 0.8)',  # Verde mu00e1s intenso para plazas pagadas
+                        'Plazas Disponibles': 'rgba(255, 165, 0, 0.8)'  # Naranja mu00e1s intenso para plazas disponibles
                     })
         
-        # Personalizar el gráfico
+        # Personalizar el gru00e1fico
         fig.update_layout(
             xaxis_title="Destino",
-            yaxis_title="Número de Plazas",
+            yaxis_title="Nu00famero de Plazas",
             legend_title="Tipo",
             font=dict(size=12),
             yaxis=dict(
@@ -637,8 +648,18 @@ try:
                 autorange=True       # Permitir que el rango se ajuste automáticamente
             ),
             bargap=0.2,              # Espacio entre grupos de barras
-            bargroupgap=0.1          # Espacio entre barras del mismo grupo
+            bargroupgap=0.1,         # Espacio entre barras del mismo grupo
+            legend=dict(
+                orientation="h",     # Orientaciu00f3n horizontal de la leyenda
+                yanchor="bottom",    # Anclar en la parte inferior
+                y=1.02,               # Posicionar encima del gru00e1fico
+                xanchor="right",     # Anclar a la derecha
+                x=1                   # Posicionar en el extremo derecho
+            )
         )
+        
+        # Mejorar la presentaciu00f3n de las etiquetas de texto
+        fig.update_traces(textposition='outside', textfont=dict(size=10, color='black'))
         
         st.plotly_chart(fig, use_container_width=True)
         

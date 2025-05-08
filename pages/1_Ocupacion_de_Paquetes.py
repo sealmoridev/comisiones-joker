@@ -400,28 +400,49 @@ try:
             lambda x: float(x.strip('%')) if isinstance(x, str) else 0
         )
         
-        # Crear gráfico de barras horizontal
+        # Crear un nuevo DataFrame con colores personalizados para cada barra
+        grafico_data = grafico_data.sort_values('Porcentaje Ocupación', ascending=True)
+        
+        # Definir colores basados en el porcentaje de ocupación
+        def get_color(porcentaje):
+            if porcentaje < 50:
+                return 'rgba(255, 0, 0, 0.7)'  # Rojo para menos del 50%
+            elif porcentaje < 80:
+                return 'rgba(255, 255, 0, 0.7)'  # Amarillo para 50-80%
+            else:
+                return 'rgba(0, 128, 0, 0.7)'  # Verde para más del 80%
+        
+        # Aplicar colores personalizados
+        colores = grafico_data['Porcentaje Ocupación'].apply(get_color)
+        
+        # Crear gráfico de barras horizontal con colores personalizados
         fig = px.bar(
-            grafico_data.sort_values('Porcentaje Ocupación', ascending=True),
+            grafico_data,
             y='Destino',
             x='Porcentaje Ocupación',
             title='Porcentaje de Ocupación por Destino',
             labels={'Porcentaje Ocupación': 'Ocupación (%)', 'Destino': 'Destino'},
-            color='Porcentaje Ocupación',
-            color_continuous_scale=[[0, 'red'], [0.5, 'yellow'], [1.0, 'green']],  # Escala de colores mejorada
-            range_color=[0, 100]
+            text=grafico_data['Porcentaje Ocupación'].apply(lambda x: f'{x:.1f}%')  # Mostrar porcentaje en cada barra
         )
+        
+        # Actualizar colores de las barras manualmente
+        fig.update_traces(marker_color=colores.tolist(), textposition='auto')
         
         # Personalizar el gráfico
         fig.update_layout(
             height=400,
             margin=dict(l=0, r=0, t=40, b=0),
-            coloraxis_colorbar=dict(
-                title='Ocupación (%)',
-                tickvals=[0, 25, 50, 75, 100],  # Valores específicos en la barra de colores
-                ticktext=['0%', '25%', '50%', '75%', '100%']  # Etiquetas para esos valores
-            )
+            showlegend=False
         )
+        
+        # Añadir una leyenda manual
+        fig.add_shape(type='rect', x0=0, y0=-1.5, x1=10, y1=-1.2, fillcolor='rgba(255, 0, 0, 0.7)', line_color='rgba(255, 0, 0, 0.7)')
+        fig.add_shape(type='rect', x0=15, y0=-1.5, x1=25, y1=-1.2, fillcolor='rgba(255, 255, 0, 0.7)', line_color='rgba(255, 255, 0, 0.7)')
+        fig.add_shape(type='rect', x0=30, y0=-1.5, x1=40, y1=-1.2, fillcolor='rgba(0, 128, 0, 0.7)', line_color='rgba(0, 128, 0, 0.7)')
+        
+        fig.add_annotation(x=5, y=-1.35, text='< 50%', showarrow=False, font=dict(color='black'))
+        fig.add_annotation(x=20, y=-1.35, text='50-80%', showarrow=False, font=dict(color='black'))
+        fig.add_annotation(x=35, y=-1.35, text='> 80%', showarrow=False, font=dict(color='black'))
         
         st.plotly_chart(fig, use_container_width=True)
         
