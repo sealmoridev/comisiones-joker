@@ -631,7 +631,13 @@ try:
             xaxis_title="Destino",
             yaxis_title="Número de Plazas",
             legend_title="Tipo",
-            font=dict(size=12)
+            font=dict(size=12),
+            yaxis=dict(
+                rangemode='tozero',  # Asegurar que el eje Y comience en cero
+                autorange=True       # Permitir que el rango se ajuste automáticamente
+            ),
+            bargap=0.2,              # Espacio entre grupos de barras
+            bargroupgap=0.1          # Espacio entre barras del mismo grupo
         )
         
         st.plotly_chart(fig, use_container_width=True)

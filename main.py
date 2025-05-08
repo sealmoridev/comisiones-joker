@@ -1,22 +1,35 @@
 # Este archivo es necesario para el despliegue en Railway
-# Importa y ejecuta la aplicación desde Home.py
 
-import subprocess
+import streamlit as st
 import sys
 import os
 
-def main():
-    # Obtener la ruta absoluta del directorio actual
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    
-    # Ejecutar streamlit run Home.py
-    try:
-        # Usar subprocess para ejecutar streamlit run Home.py
-        subprocess.run([sys.executable, "-m", "streamlit", "run", os.path.join(current_dir, "Home.py")], 
-                      check=True)
-    except subprocess.CalledProcessError as e:
-        print(f"Error al ejecutar Streamlit: {e}")
-        sys.exit(1)
+# Configurar la página
+st.set_page_config(page_title="Joker Travel - Dashboard", layout="wide")
 
-if __name__ == "__main__":
-    main()
+# Título principal
+st.title("Joker Travel - Dashboard")
+
+# Mensaje de bienvenida
+st.markdown("""
+## Bienvenido al Dashboard de Joker Travel
+
+Este dashboard te permite visualizar y analizar datos importantes sobre:
+
+- Ocupación de paquetes
+- Ventas por destino
+- Venta por agencia
+
+Selecciona una de las opciones del menú lateral para comenzar.
+""")
+
+# Imagen o logo (opcional)
+# st.image("logo.png", width=300)
+
+# Información adicional
+st.sidebar.markdown("### Navegación")
+st.sidebar.info("Utiliza el menú superior para navegar entre las diferentes secciones del dashboard.")
+
+# Pie de página
+st.markdown("---")
+st.markdown(" 2025 Joker Travel. Todos los derechos reservados.")

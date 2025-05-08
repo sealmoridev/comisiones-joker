@@ -408,14 +408,19 @@ try:
             title='Porcentaje de Ocupación por Destino',
             labels={'Porcentaje Ocupación': 'Ocupación (%)', 'Destino': 'Destino'},
             color='Porcentaje Ocupación',
-            color_continuous_scale=['red', 'yellow', 'green'],
+            color_continuous_scale=[[0, 'red'], [0.5, 'yellow'], [1.0, 'green']],  # Escala de colores mejorada
             range_color=[0, 100]
         )
         
         # Personalizar el gráfico
         fig.update_layout(
             height=400,
-            margin=dict(l=0, r=0, t=40, b=0)
+            margin=dict(l=0, r=0, t=40, b=0),
+            coloraxis_colorbar=dict(
+                title='Ocupación (%)',
+                tickvals=[0, 25, 50, 75, 100],  # Valores específicos en la barra de colores
+                ticktext=['0%', '25%', '50%', '75%', '100%']  # Etiquetas para esos valores
+            )
         )
         
         st.plotly_chart(fig, use_container_width=True)
