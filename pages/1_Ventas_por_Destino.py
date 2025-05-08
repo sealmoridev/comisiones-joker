@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 import io
 import sys
 import os
+import plotly.graph_objects as go
 
 # Agregar la ruta del proyecto al path de Python
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -624,18 +625,39 @@ try:
         df_plazas_grafico['Destino'] = pd.Categorical(df_plazas_grafico['Destino'], categories=orden_destinos, ordered=True)
         df_plazas_grafico = df_plazas_grafico.sort_values('Destino')
         
-        # Crear un gru00e1fico de barras agrupadas para plazas con colores mu00e1s vibrantes
-        fig = px.bar(df_plazas_grafico,
-                    x='Destino',
-                    y='Valor',
-                    color='Tipo',  # Colorear por tipo (Plazas Pagadas vs Plazas Disponibles)
-                    title=f'Plazas por Destino - {selected_month}',
-                    text=df_plazas_grafico['Valor'].apply(lambda x: f"{int(x):,}".replace(',', '.')),
-                    barmode='group',  # Agrupar barras por destino
-                    color_discrete_map={
-                        'Plazas Pagadas': 'rgba(0, 128, 0, 0.8)',  # Verde mu00e1s intenso para plazas pagadas
-                        'Plazas Disponibles': 'rgba(255, 165, 0, 0.8)'  # Naranja mu00e1s intenso para plazas disponibles
-                    })
+        # Crear una figura vacía con subplots
+        fig = go.Figure()
+        
+        # Obtener datos separados para cada tipo
+        df_pagadas = df_plazas_grafico[df_plazas_grafico['Tipo'] == 'Plazas Pagadas']
+        df_disponibles = df_plazas_grafico[df_plazas_grafico['Tipo'] == 'Plazas Disponibles']
+        
+        # Añadir barras para plazas pagadas
+        fig.add_trace(go.Bar(
+            x=df_pagadas['Destino'],
+            y=df_pagadas['Valor'],
+            name='Plazas Pagadas',
+            text=df_pagadas['Valor'].apply(lambda x: f"{int(x):,}".replace(',', '.')),
+            textposition='outside',
+            marker_color='rgba(0, 128, 0, 0.8)',  # Verde para plazas pagadas
+            textfont=dict(size=10, color='black')
+        ))
+        
+        # Añadir barras para plazas disponibles
+        fig.add_trace(go.Bar(
+            x=df_disponibles['Destino'],
+            y=df_disponibles['Valor'],
+            name='Plazas Disponibles',
+            text=df_disponibles['Valor'].apply(lambda x: f"{int(x):,}".replace(',', '.')),
+            textposition='outside',
+            marker_color='rgba(255, 165, 0, 0.8)',  # Naranja para plazas disponibles
+            textfont=dict(size=10, color='black')
+        ))
+        
+        # Configurar el título del gráfico
+        fig.update_layout(
+            title=f'Plazas por Destino - {selected_month}'
+        )
         
         # Personalizar el gru00e1fico
         fig.update_layout(
