@@ -4,6 +4,9 @@ import requests
 import os
 from dotenv import load_dotenv
 from urllib.parse import urlparse, urlunparse
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+import time
 
 class OdooClient:
     def __init__(self):
@@ -43,8 +46,21 @@ class OdooClient:
                 parsed_url = parsed_url._replace(netloc=netloc)
             
             self.base_url = urlunparse(parsed_url)
-            print(f"URL base: {self.base_url}")  # Debug
             
+            # Configurar la sesión con reintentos
+            self.session = requests.Session()
+            retry_strategy = Retry(
+                total=3,  # número total de reintentos
+                backoff_factor=1,  # tiempo de espera entre reintentos
+                status_forcelist=[500, 502, 503, 504],  # códigos HTTP para reintentar
+                allowed_methods=["POST"]  # permitir reintentos en POST
+            )
+            adapter = HTTPAdapter(max_retries=retry_strategy)
+            self.session.mount("http://", adapter)
+            self.session.mount("https://", adapter)
+            self.session.verify = False
+            requests.packages.urllib3.disable_warnings()
+
             # Verificar la conexión y obtener la versión
             version = self._jsonrpc('/web/webclient/version_info')
             print(f"Conectado a Odoo versión: {version.get('server_version')}")
@@ -67,12 +83,7 @@ class OdooClient:
             raise
 
     def _jsonrpc(self, endpoint, params=None):
-        """Ejecuta una llamada JSON-RPC a Odoo"""
-        if not hasattr(self, 'session'):
-            self.session = requests.Session()
-            self.session.verify = False  # Para permitir certificados auto-firmados
-            requests.packages.urllib3.disable_warnings()  # Suprimir advertencias SSL
-
+        """Ejecuta una llamada JSON-RPC a Odoo con reintentos"""
         headers = {
             'Content-Type': 'application/json',
         }
@@ -85,30 +96,47 @@ class OdooClient:
         }
 
         url = f"{self.base_url}{endpoint}"
-        print(f"Haciendo request a: {url}")  # Debug
+        max_retries = 3
+        retry_delay = 1
 
-        try:
-            response = self.session.post(
-                url,
-                headers=headers,
-                data=json.dumps(data),
-                timeout=30
-            )
-            response.raise_for_status()
-            result = response.json()
-            
-            if result.get('error'):
-                raise Exception(
-                    f"Error en la llamada RPC: {result['error'].get('message', 'Unknown error')}"
+        for attempt in range(max_retries):
+            try:
+                response = self.session.post(
+                    url,
+                    headers=headers,
+                    data=json.dumps(data),
+                    timeout=60  # Aumentado el timeout
                 )
-            
-            return result.get('result', {})
+                response.raise_for_status()
+                result = response.json()
+                
+                if result.get('error'):
+                    error_data = result['error']
+                    error_message = error_data.get('message', 'Unknown error')
+                    error_data = error_data.get('data', {})
+                    debug = error_data.get('debug', '')
+                    
+                    raise Exception(
+                        f"Error en la llamada RPC: {error_message}\n"
+                        f"Debug: {debug}"
+                    )
+                
+                return result.get('result', {})
 
-        except requests.exceptions.RequestException as e:
-            print(f"Error en la solicitud HTTP: {str(e)}")
-            raise
+            except (requests.exceptions.ChunkedEncodingError, 
+                    requests.exceptions.ConnectionError,
+                    requests.exceptions.ReadTimeout) as e:
+                if attempt == max_retries - 1:  # Último intento
+                    print(f"Error después de {max_retries} intentos: {str(e)}")
+                    raise
+                print(f"Intento {attempt + 1} falló, reintentando en {retry_delay} segundos...")
+                time.sleep(retry_delay)
+                retry_delay *= 2  # Backoff exponencial
+            except Exception as e:
+                print(f"Error inesperado en la solicitud HTTP: {str(e)}")
+                raise
 
-    def search_read(self, model, domain=None, fields=None):
+    def search_read(self, model, domain=None, fields=None, batch_size=1000):
         """Ejecuta search_read con manejo de errores mejorado"""
         if domain is None:
             domain = []
@@ -116,13 +144,16 @@ class OdooClient:
             fields = []
 
         try:
+            # Realizar una sola consulta sin paginación
             result = self._jsonrpc('/web/dataset/search_read', {
                 'model': model,
                 'domain': domain,
                 'fields': fields,
                 'context': {'lang': 'es_ES'}
             })
+            
             return result.get('records', [])
+            
         except Exception as e:
             print(f"Error en search_read para modelo {model}: {str(e)}")
             raise

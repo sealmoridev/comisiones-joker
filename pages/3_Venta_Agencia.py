@@ -28,8 +28,8 @@ def to_csv(df):
 
 
 # 3. CONFIGURACIÓN DE LA PÁGINA
-st.set_page_config(page_title="Órdenes de Venta", layout="wide")
-st.title("Órdenes de Venta")
+st.set_page_config(page_title="Venta Agencia", layout="wide")
+st.title("Venta Agencia")
 
 # 4. CONSTANTES
 INVOICE_STATUS = {
@@ -56,42 +56,76 @@ try:
     # Agregar opción "Todos"
     team_names[0] = "Todos"
 
-    # Filtros en la barra lateral
-    st.sidebar.title("Filtros")
-
-    # Filtro de agencia
-    st.sidebar.subheader("Agencia")
-    agencia_seleccionada = st.sidebar.selectbox(
-        "Seleccionar Agencia",
-        options=[0] + [team['id'] for team in teams],
-        format_func=lambda x: team_names[x],
-        key="agencia"
-    )
-
-    # Filtro de estado de facturación
-    st.sidebar.subheader("Estado de Facturación")
-    estado_facturacion = st.sidebar.multiselect(
-        "Estado de facturación",
-        options=list(INVOICE_STATUS.keys()),
-        default=['invoiced'],
-        format_func=lambda x: INVOICE_STATUS[x]
-    )
-
-    # Filtro de fechas
-    st.sidebar.subheader("Rango de Fechas")
-    fecha_fin = datetime.now()
-    fecha_inicio = fecha_fin - timedelta(days=30)
-
-    fecha_inicio_selected = st.sidebar.date_input(
-        "Fecha Inicio",
-        value=fecha_inicio,
-        key="fecha_inicio"
-    )
-    fecha_fin_selected = st.sidebar.date_input(
-        "Fecha Fin",
-        value=fecha_fin,
-        key="fecha_fin"
-    )
+    # Filtros al inicio de la página
+    st.subheader("Filtros")
+    
+    # Crear contenedor para filtros
+    filtros_container = st.container()
+    
+    with filtros_container:
+        # Primera fila de filtros
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            # Filtro de agencia
+            st.subheader("Agencia")
+            agencia_seleccionada = st.selectbox(
+                "Seleccionar Agencia",
+                options=[0] + [team['id'] for team in teams],
+                format_func=lambda x: team_names[x],
+                key="agencia"
+            )
+        
+        with col2:
+            # Filtro de estado de facturación
+            st.subheader("Estado de Facturación")
+            estado_facturacion = st.multiselect(
+                "Estado de facturación",
+                options=list(INVOICE_STATUS.keys()),
+                default=['invoiced'],
+                format_func=lambda x: INVOICE_STATUS[x]
+            )
+        
+        with col3:
+            # Filtro de tipo de cupo
+            TIPO_CUPO = {
+                'Regular': 'Regular',
+                'Social': 'Social',
+                'Sin Subsidio': 'Sin Subsidio',
+                'Privado': 'Privado'
+            }
+            
+            st.subheader("Tipo de Cupo")
+            tipo_cupo_seleccionado = st.selectbox(
+                "Seleccionar Tipo de Cupo",
+                options=list(TIPO_CUPO.keys()),
+                format_func=lambda x: TIPO_CUPO[x],
+                key="tipo_cupo"
+            )
+        
+        # Segunda fila para filtros de fecha
+        col1, col2 = st.columns(2)
+        
+        # Filtro de fechas
+        fecha_fin = datetime.now()
+        fecha_inicio = fecha_fin - timedelta(days=30)
+        
+        with col1:
+            fecha_inicio_selected = st.date_input(
+                "Fecha Inicio",
+                value=fecha_inicio,
+                key="fecha_inicio"
+            )
+            
+        with col2:
+            fecha_fin_selected = st.date_input(
+                "Fecha Fin",
+                value=fecha_fin,
+                key="fecha_fin"
+            )
+        
+        # Agregar una línea divisoria
+        st.markdown("---")
 
     # Construir el dominio de búsqueda
     domain = [
@@ -104,21 +138,7 @@ try:
     if agencia_seleccionada != 0:
         domain.append(("team_id", "=", agencia_seleccionada))
 
-    # Agregar después de los otros filtros en la barra lateral
-    TIPO_CUPO = {
-        'Regular': 'Regular',
-        'Social': 'Social',
-        'Sin Subsidio': 'Sin Subsidio',
-        'Privado': 'Privado'
-    }
-
-    st.sidebar.subheader("Tipo de Cupo")
-    tipo_cupo_seleccionado = st.sidebar.selectbox(
-        "Seleccionar Tipo de Cupo",
-        options=list(TIPO_CUPO.keys()),
-        format_func=lambda x: TIPO_CUPO[x],
-        key="tipo_cupo"
-    )
+    # El filtro de Tipo de Cupo ya está incluido en la parte superior de la página
 
     # Campos a obtener
     fields = [
