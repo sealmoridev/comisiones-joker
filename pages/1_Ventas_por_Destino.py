@@ -625,38 +625,81 @@ try:
         df_plazas_grafico['Destino'] = pd.Categorical(df_plazas_grafico['Destino'], categories=orden_destinos, ordered=True)
         df_plazas_grafico = df_plazas_grafico.sort_values('Destino')
         
-        # Crear una figura vacía con subplots
+        # Crear datos para el gru00e1fico
+        destinos = df_plazas_grafico['Destino'].unique()
+        
+        # Crear diccionarios para almacenar los valores por destino
+        plazas_pagadas = {}
+        plazas_disponibles = {}
+        
+        # Llenar los diccionarios con los valores
+        for destino in destinos:
+            # Obtener los valores como lista para evitar problemas con .values
+            pagadas_df = df_plazas_grafico[(df_plazas_grafico['Destino'] == destino) & (df_plazas_grafico['Tipo'] == 'Plazas Pagadas')]['Valor']
+            disponibles_df = df_plazas_grafico[(df_plazas_grafico['Destino'] == destino) & (df_plazas_grafico['Tipo'] == 'Plazas Disponibles')]['Valor']
+            
+            # Convertir a lista y obtener el primer valor si existe
+            pagadas_list = pagadas_df.tolist()
+            disponibles_list = disponibles_df.tolist()
+            
+            plazas_pagadas[destino] = pagadas_list[0] if len(pagadas_list) > 0 else 0
+            plazas_disponibles[destino] = disponibles_list[0] if len(disponibles_list) > 0 else 0
+        
+        # Ordenar los destinos por el total de plazas
+        total_plazas = {destino: plazas_pagadas[destino] + plazas_disponibles[destino] for destino in destinos}
+        destinos_ordenados = sorted(destinos, key=lambda x: total_plazas[x])
+        
+        # Crear listas ordenadas para el gru00e1fico
+        valores_pagadas = [plazas_pagadas[destino] for destino in destinos_ordenados]
+        valores_disponibles = [plazas_disponibles[destino] for destino in destinos_ordenados]
+        
+        # Crear la figura con barras verticales
         fig = go.Figure()
         
-        # Obtener datos separados para cada tipo
-        df_pagadas = df_plazas_grafico[df_plazas_grafico['Tipo'] == 'Plazas Pagadas']
-        df_disponibles = df_plazas_grafico[df_plazas_grafico['Tipo'] == 'Plazas Disponibles']
-        
-        # Añadir barras para plazas pagadas
+        # Au00f1adir barras para plazas pagadas
         fig.add_trace(go.Bar(
-            x=df_pagadas['Destino'],
-            y=df_pagadas['Valor'],
+            x=destinos_ordenados,
+            y=valores_pagadas,
             name='Plazas Pagadas',
-            text=df_pagadas['Valor'].apply(lambda x: f"{int(x):,}".replace(',', '.')),
+            text=[f"{int(v):,}".replace(',', '.') for v in valores_pagadas],
             textposition='outside',
-            marker_color='rgba(0, 128, 0, 0.8)',  # Verde para plazas pagadas
-            textfont=dict(size=10, color='black')
+            marker_color='rgba(0, 128, 0, 0.8)'  # Verde para plazas pagadas
         ))
         
-        # Añadir barras para plazas disponibles
+        # Au00f1adir barras para plazas disponibles
         fig.add_trace(go.Bar(
-            x=df_disponibles['Destino'],
-            y=df_disponibles['Valor'],
+            x=destinos_ordenados,
+            y=valores_disponibles,
             name='Plazas Disponibles',
-            text=df_disponibles['Valor'].apply(lambda x: f"{int(x):,}".replace(',', '.')),
+            text=[f"{int(v):,}".replace(',', '.') for v in valores_disponibles],
             textposition='outside',
-            marker_color='rgba(255, 165, 0, 0.8)',  # Naranja para plazas disponibles
-            textfont=dict(size=10, color='black')
+            marker_color='rgba(255, 165, 0, 0.8)'  # Naranja para plazas disponibles
         ))
         
-        # Configurar el título del gráfico
+        # Configurar el título del gráfico y otras propiedades
         fig.update_layout(
-            title=f'Plazas por Destino - {selected_month}'
+            title=f'Plazas por Destino - {selected_month}',
+            barmode='group',  # Agrupar barras lado a lado
+            bargap=0.15,      # Espacio entre grupos de barras
+            bargroupgap=0.1,  # Espacio entre barras del mismo grupo
+            plot_bgcolor='white',  # Fondo blanco
+            showlegend=True,
+            legend=dict(
+                orientation="h",     # Orientaciu00f3n horizontal de la leyenda
+                yanchor="bottom",    # Anclar en la parte inferior
+                y=1.02,               # Posicionar encima del gru00e1fico
+                xanchor="right",     # Anclar a la derecha
+                x=1                   # Posicionar en el extremo derecho
+            ),
+            yaxis=dict(
+                title="Nu00famero de Plazas",
+                rangemode='tozero',  # Asegurar que el eje Y comience en cero
+                gridcolor='lightgray'  # Color de las líneas de la cuadrícula
+            ),
+            xaxis=dict(
+                title="Destino",
+                tickangle=-45  # Rotar las etiquetas para mejor legibilidad
+            )
         )
         
         # Personalizar el gru00e1fico
