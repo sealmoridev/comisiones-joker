@@ -1,4 +1,5 @@
 import streamlit as st
+import auth
 
 # Configuración de la página principal
 st.set_page_config(
@@ -6,6 +7,10 @@ st.set_page_config(
     page_icon="🏝️",
     layout="wide"
 )
+
+# Verificar autenticación
+if not auth.check_password():
+    st.stop()  # Si no está autenticado, detener la ejecución
 
 # Título y descripción
 st.title("Sistema de Comisiones Joker")
@@ -32,3 +37,8 @@ Cada sección cuenta con filtros específicos para personalizar la información 
 # Información adicional en la barra lateral
 st.sidebar.title("Navegación")
 st.sidebar.info("Selecciona una página del menú para comenzar.")
+
+# Agregar botón de cerrar sesión
+if st.sidebar.button("Logout"):
+    auth.logout()
+    st.rerun()

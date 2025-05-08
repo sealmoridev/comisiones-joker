@@ -2,6 +2,26 @@
 
 # 1. IMPORTACIONES
 import streamlit as st
+
+# Configuración de la página - DEBE SER LA PRIMERA LLAMADA A STREAMLIT
+st.set_page_config(page_title="Venta Agencia", layout="wide")
+
+import sys
+import os
+
+# Importar módulo de autenticación
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import auth
+
+# Verificar autenticación
+if not auth.check_password():
+    st.stop()  # Si no está autenticado, detener la ejecución
+
+# Agregar botón de cerrar sesión en la barra lateral
+if st.sidebar.button("Logout"):
+    auth.logout()
+    st.rerun()
+
 import pandas as pd
 from datetime import datetime, timedelta
 import io
@@ -27,8 +47,7 @@ def to_csv(df):
     return df.to_csv(index=False).encode('utf-8')
 
 
-# 3. CONFIGURACIÓN DE LA PÁGINA
-st.set_page_config(page_title="Venta Agencia", layout="wide")
+# 3. TÍTULO DE LA PÁGINA
 st.title("Venta Agencia")
 
 # 4. CONSTANTES
@@ -367,69 +386,6 @@ try:
             )
 
 
-            # Crear DataFrame para el gráfico de tendencia
-            st.subheader("Tendencia de Reservas")
-
-            # Convertir las fechas a datetime si no lo están ya
-            df_orders['Fecha'] = pd.to_datetime(df_orders['Fecha'])
-
-            # Agrupar por fecha y contar órdenes
-            df_trend = df_orders.groupby('Fecha').size().reset_index(name='Cantidad')
-            df_trend = df_trend.sort_values('Fecha')
-
-            # Crear el gráfico de línea
-            st.line_chart(
-                df_trend.set_index('Fecha')['Cantidad'],
-                use_container_width=True
-            )
-
-            # Opcionalmente, mostrar también las ventas diarias
-            st.subheader("Tendencia de Ventas")
-            # Convertir los valores de 'Total' a numéricos (quitando 'CLP' y el formato)
-            df_orders['Total_Num'] = df_orders['Total'].str.replace('CLP ', '').str.replace('.', '').str.replace(',', '.').astype(float)
-
-            # Agrupar por fecha y sumar ventas
-            df_sales = df_orders.groupby('Fecha')['Total_Num'].sum().reset_index()
-            df_sales = df_sales.sort_values('Fecha')
-
-            # Crear el gráfico de línea para ventas
-            st.line_chart(
-                df_sales.set_index('Fecha')['Total_Num'],
-                use_container_width=True
-            )
-
-            # Opcionalmente, podemos mostrar también un gráfico de comisiones
-            st.subheader("Tendencia de Comisiones")
-            # Convertir los valores de 'Comisión' a numéricos
-            df_orders['Comision_Num'] = df_orders['Comision'].str.replace('CLP ', '').str.replace('.', '').str.replace(',', '.').astype(float)
-
-            # Agrupar por fecha y sumar comisiones
-            df_commission = df_orders.groupby('Fecha')['Comision_Num'].sum().reset_index()
-            df_commission = df_commission.sort_values('Fecha')
-
-            # Crear el gráfico de línea para comisiones
-            st.line_chart(
-                df_commission.set_index('Fecha')['Comision_Num'],
-                use_container_width=True
-            )
-
-            # Opcional: Mostrar los datos en una tabla expandible
-            with st.expander("Ver datos del gráfico"):
-                col1, col2, col3 = st.columns(3)
-
-                with col1:
-                    st.write("Reservas por día")
-                    st.dataframe(df_trend)
-
-                with col2:
-                    st.write("Ventas por día")
-                    df_sales['Total_Num'] = df_sales['Total_Num'].apply(lambda x: f"CLP {format_currency(x, 0)}")
-                    st.dataframe(df_sales)
-
-                with col3:
-                    st.write("Comisiones por día")
-                    df_commission['Comision_Num'] = df_commission['Comision_Num'].apply(lambda x: f"CLP {format_currency(x, 0)}")
-                    st.dataframe(df_commission)
         else:
             st.info("No se encontraron órdenes de venta con los filtros seleccionados")
 

@@ -1,10 +1,29 @@
 import streamlit as st
+
+# Configuración de la página - DEBE SER LA PRIMERA LLAMADA A STREAMLIT
+st.set_page_config(page_title="Ocupación de Paquetes", layout="wide")
+
 import pandas as pd
-from datetime import datetime, timedelta
+import numpy as np
+import plotly.express as px
+import plotly.graph_objects as go
 import io
 import sys
 import os
-import plotly.express as px
+from datetime import datetime, timedelta
+
+# Importar módulo de autenticación
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import auth
+
+# Verificar autenticación
+if not auth.check_password():
+    st.stop()  # Si no está autenticado, detener la ejecución
+
+# Agregar botón de cerrar sesión en la barra lateral
+if st.sidebar.button("Logout"):
+    auth.logout()
+    st.rerun()
 
 # Agregar la ruta del proyecto al path de Python
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -107,8 +126,7 @@ def calcular_tiempo_restante(fecha_salida_str, fecha_actual):
     except Exception as e:
         return "Fecha inválida"
 
-# Configuración de la página
-st.set_page_config(page_title="Ocupación de Paquetes", layout="wide")
+# Título de la página
 st.title("Ocupación de Paquetes")
 
 try:
