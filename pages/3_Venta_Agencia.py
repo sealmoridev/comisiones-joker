@@ -46,6 +46,13 @@ def to_csv(df):
     """Convierte DataFrame a CSV"""
     return df.to_csv(index=False).encode('utf-8')
 
+def to_excel(df, sheet_name='Sheet1'):
+    """Convierte DataFrame a Excel XLSX"""
+    from io import BytesIO
+    output = BytesIO()
+    df.to_excel(output, engine='openpyxl', sheet_name=sheet_name, index=False)
+    return output.getvalue()
+
 def load_orders_data(odoo, domain, fields, tipos_cupo_seleccionados):
     """Carga y procesa los datos de órdenes"""
     orders = odoo.search_read('sale.order', domain=domain, fields=fields)
@@ -427,33 +434,44 @@ try:
                     'Total Vendido': f'Vendido {fecha_inicio_prev.year}'
                 })
                 
-                # Combinar DataFrames
-                df_resumen = pd.merge(df_actual, df_anterior, on='Agencia', how='outer').fillna(0)
+                # Combinar datos para mostrar lado a lado
+                df_combined = pd.merge(df_actual, df_anterior, on='Agencia', how='outer', suffixes=(f' {fecha_inicio_selected.year}', f' {fecha_inicio_prev.year}'))
+                df_combined = df_combined.fillna(0)
                 
-                # Calcular diferencias
-                df_resumen[f'Δ Órdenes'] = df_resumen[f'Órdenes {fecha_inicio_selected.year}'] - df_resumen[f'Órdenes {fecha_inicio_prev.year}']
-                df_resumen[f'Δ Pasajeros'] = df_resumen[f'Pasajeros {fecha_inicio_selected.year}'] - df_resumen[f'Pasajeros {fecha_inicio_prev.year}']
-                df_resumen[f'Δ Comisiones'] = df_resumen[f'Comisiones {fecha_inicio_selected.year}'] - df_resumen[f'Comisiones {fecha_inicio_prev.year}']
-                df_resumen[f'Δ Vendido'] = df_resumen[f'Vendido {fecha_inicio_selected.year}'] - df_resumen[f'Vendido {fecha_inicio_prev.year}']
+                # Calcular deltas
+                df_combined[f'Δ Órdenes'] = df_combined[f'Órdenes {fecha_inicio_selected.year}'] - df_combined[f'Órdenes {fecha_inicio_prev.year}']
+                df_combined[f'Δ Pasajeros'] = df_combined[f'Pasajeros {fecha_inicio_selected.year}'] - df_combined[f'Pasajeros {fecha_inicio_prev.year}']
+                df_combined[f'Δ Comisiones'] = df_combined[f'Comisiones {fecha_inicio_selected.year}'] - df_combined[f'Comisiones {fecha_inicio_prev.year}']
+                df_combined[f'Δ Vendido'] = df_combined[f'Vendido {fecha_inicio_selected.year}'] - df_combined[f'Vendido {fecha_inicio_prev.year}']
                 
-                # Formatear columnas de moneda
+                # Crear copia para descarga (valores numéricos)
+                df_resumen_download = df_combined.copy()
+                
+                # Crear copia para visualización (con formato CLP)
+                df_resumen = df_combined.copy()
                 for col in df_resumen.columns:
                     if 'Comisiones' in col or 'Vendido' in col:
                         df_resumen[col] = df_resumen[col].apply(lambda x: f"CLP {format_currency(x, 0)}")
                 
             else:
                 # Tabla normal sin comparación
-                df_resumen = pd.DataFrame(list(resumen_agencias.values()))
+                df_resumen_base = pd.DataFrame(list(resumen_agencias.values()))
+                
+                # Crear copia para descarga (valores numéricos)
+                df_resumen_download = df_resumen_base.copy()
+                
+                # Crear copia para visualización (con formato CLP)
+                df_resumen = df_resumen_base.copy()
                 df_resumen['Total Comisiones'] = df_resumen['Total Comisiones'].apply(lambda x: f"CLP {format_currency(x, 0)}")
                 df_resumen['Total Vendido'] = df_resumen['Total Vendido'].apply(lambda x: f"CLP {format_currency(x, 0)}")
 
-            # Botón para descargar resumen
-            filename = "resumen_agencias_comparacion.csv" if comparar_año_anterior else "resumen_agencias.csv"
+            # Botón para descargar resumen en Excel
+            filename = "resumen_agencias_comparacion.xlsx" if comparar_año_anterior else "resumen_agencias.xlsx"
             st.download_button(
-                label="📥 Descargar Resumen por Agencia",
-                data=to_csv(df_resumen),
+                label="📥 Descargar Resumen por Agencia (Excel)",
+                data=to_excel(df_resumen_download, 'Resumen Agencias'),
                 file_name=filename,
-                mime="text/csv"
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
 
             # Mostrar tabla de resumen con selección
@@ -487,10 +505,15 @@ try:
             if df_orders.empty:
                 st.warning("No hay órdenes para mostrar con los filtros seleccionados")
             else:
-                # Formatear columnas de manera segura
-                df_orders_display = df_orders.copy()
+                # Crear DataFrame para descarga (valores numéricos)
+                df_orders_download = pd.DataFrame(all_orders_data)
+                if 'ID' in df_orders_download.columns:
+                    df_orders_download = df_orders_download.drop('ID', axis=1)
                 
-                # Formatear columnas monetarias
+                # Crear DataFrame para mostrar (con formato CLP)
+                df_orders_display = pd.DataFrame(all_orders_data)
+                
+                # Formatear columnas monetarias para visualización
                 if 'Comision' in df_orders_display.columns:
                     df_orders_display['Comision'] = df_orders_display['Comision'].apply(
                         lambda x: f"CLP {format_currency(float(x), 0)}" if pd.notna(x) else "CLP 0"
@@ -505,18 +528,22 @@ try:
                 if comparar_año_anterior and 'Año' in df_orders_display.columns:
                     cols = ['Año'] + [col for col in df_orders_display.columns if col != 'Año' and col != 'ID']
                     df_orders_display = df_orders_display[cols]
+                    # También reordenar para descarga
+                    if 'Año' in df_orders_download.columns:
+                        cols_download = ['Año'] + [col for col in df_orders_download.columns if col != 'Año']
+                        df_orders_download = df_orders_download[cols_download]
                 else:
                     # Remover columna ID para la visualización
                     if 'ID' in df_orders_display.columns:
                         df_orders_display = df_orders_display.drop('ID', axis=1)
 
-                # Botón para descargar órdenes
-                filename = "ordenes_comparacion.csv" if comparar_año_anterior else "ordenes.csv"
+                # Botón para descargar órdenes en Excel
+                filename = "ordenes_comparacion.xlsx" if comparar_año_anterior else "ordenes.xlsx"
                 st.download_button(
-                    label="📥 Descargar Órdenes",
-                    data=to_csv(df_orders_display),
+                    label="📥 Descargar Órdenes (Excel)",
+                    data=to_excel(df_orders_download, 'Órdenes'),
                     file_name=filename,
-                    mime="text/csv"
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
 
                 # Mostrar tabla de órdenes
