@@ -219,7 +219,7 @@ try:
             estados_seleccionados = estados_seleccionados_nombres
             
             # Filtro de tipo de cupo
-            tipos_cupo_unicos = sorted(df_templates['x_studio_tipo_de_cupo'].dropna().unique())
+            tipos_cupo_unicos = sorted(df_templates['x_studio_tipo_de_cupo'].dropna().astype(str).unique())
             tipos_cupo_seleccionados = st.multiselect(
                 "Tipo de Cupo",
                 options=tipos_cupo_unicos,

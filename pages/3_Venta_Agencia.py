@@ -46,6 +46,117 @@ def to_csv(df):
     """Convierte DataFrame a CSV"""
     return df.to_csv(index=False).encode('utf-8')
 
+def load_orders_data(odoo, domain, fields, tipo_cupo_seleccionado):
+    """Carga y procesa los datos de órdenes"""
+    orders = odoo.search_read('sale.order', domain=domain, fields=fields)
+    
+    if not orders:
+        return [], {}
+    
+    # Obtener todas las líneas de orden (no solo la primera)
+    all_line_ids = []
+    for order in orders:
+        if order['order_line']:
+            all_line_ids.extend(order['order_line'])
+    
+    # Obtener todas las líneas de orden
+    all_lines = odoo.search_read(
+        'sale.order.line',
+        domain=[('id', 'in', all_line_ids)],
+        fields=[
+            'id', 
+            'product_id', 
+            'product_uom_qty',
+            'name',
+            'price_unit',
+            'price_subtotal',
+            'order_id'
+        ]
+    )
+    
+    # Crear diccionario de líneas por orden
+    lines_by_order = {}
+    for line in all_lines:
+        order_id = line['order_id'][0]
+        if order_id not in lines_by_order:
+            lines_by_order[order_id] = []
+        lines_by_order[order_id].append(line)
+    
+    # Obtener productos únicos
+    product_ids = list(set(line['product_id'][0] for line in all_lines if line['product_id']))
+    products = odoo.search_read(
+        'product.template',
+        domain=[('id', 'in', product_ids)],
+        fields=['id', 
+                'name',
+                'default_code',
+                'list_price',                
+                'x_studio_comision_agencia',
+                'x_studio_destino',
+                'x_studio_tipo_de_cupo'
+               ]
+    )
+    products_dict = {prod['id']: prod for prod in products}
+    
+    # Procesar órdenes
+    orders_data = []
+    resumen_agencias = {}
+    
+    for order in orders:
+        order_lines = lines_by_order.get(order['id'], [])
+        team_id = order['team_id'][0] if order['team_id'] else 0
+        team_name = order['team_id'][1] if order['team_id'] else 'Sin Agencia'
+        
+        # Inicializar resumen de agencia si no existe
+        if team_name not in resumen_agencias:
+            resumen_agencias[team_name] = {
+                'Agencia': team_name,
+                'Total Órdenes': 0,
+                'Total Pasajeros': 0,
+                'Total Comisiones': 0,
+                'Total Vendido': 0
+            }
+        
+        # Procesar cada línea de la orden
+        for line in order_lines:
+            if line['product_id']:
+                product = products_dict.get(line['product_id'][0])
+                if product:
+                    # Filtrar por tipo de cupo si está seleccionado
+                    if tipo_cupo_seleccionado and product.get('x_studio_tipo_de_cupo') != tipo_cupo_seleccionado:
+                        continue
+                    
+                    comision_rate = product.get('x_studio_comision_agencia', 0)
+                    cantidad = line['product_uom_qty']
+                    comision = comision_rate * cantidad
+                    
+                    orders_data.append({
+                        'Número': order['name'],
+                        'Cliente': order['partner_id'][1] if order['partner_id'] else 'Sin cliente',
+                        'Fecha': datetime.strptime(order['date_order'], "%Y-%m-%d %H:%M:%S").strftime("%Y-%m-%d %H:%M"),
+                        'Producto': product.get('name', 'Sin nombre'),
+                        'Destino': product.get('x_studio_destino', 'Sin destino'),
+                        'Tipo de Cupo': product.get('x_studio_tipo_de_cupo', 'No definido'),
+                        'Estado Facturación': INVOICE_STATUS[order['invoice_status']],
+                        'Agencia': team_name,
+                        'Vendedor': order['user_id'][1] if order['user_id'] else 'Sin asignar',
+                        'Cantidad': int(cantidad),
+                        'Comision': float(comision),
+                        'Total': float(line['price_subtotal']),  # Usar subtotal de la línea
+                        'ID': int(order['id'])
+                    })
+                    
+                    # Actualizar resumen de agencia
+                    resumen_agencias[team_name]['Total Pasajeros'] += cantidad
+                    resumen_agencias[team_name]['Total Comisiones'] += comision
+                    resumen_agencias[team_name]['Total Vendido'] += line['price_subtotal']
+        
+        # Contar la orden solo una vez por agencia
+        if order_lines:  # Solo si tiene líneas válidas
+            resumen_agencias[team_name]['Total Órdenes'] += 1
+    
+    return orders_data, resumen_agencias
+
 
 # 3. TÍTULO DE LA PÁGINA
 st.title("Venta Agencia")
@@ -122,6 +233,14 @@ try:
                 key="tipo_cupo"
             )
         
+        # Tercera fila para comparación con año anterior
+        st.subheader("Comparación Anual")
+        comparar_año_anterior = st.checkbox(
+            "Comparar con el mismo período del año anterior",
+            value=False,
+            help="Muestra datos del año actual vs el año anterior en las mismas fechas"
+        )
+        
         # Segunda fila para filtros de fecha
         col1, col2 = st.columns(2)
         
@@ -175,146 +294,98 @@ try:
     progress_text = "Operación en progreso. Por favor, espere..."
     progress_bar = st.progress(0, text=progress_text)
 
-    with st.spinner('Cargando órdenes...'):
-        orders = odoo.search_read('sale.order', domain=domain, fields=fields)
-        progress_bar.progress(25, text="Órdenes cargadas...")
-
-        if orders:
-            # Obtener todas las primeras líneas y productos de una vez
-            first_line_ids = [order['order_line'][0] if order['order_line'] else None for order in orders]
-            first_line_ids = [id for id in first_line_ids if id is not None]
-
-            first_lines = odoo.search_read(
-                'sale.order.line',
-                domain=[('id', 'in', first_line_ids)],
-                fields=[
-                    'id', 
-                    'product_id', 
-                    'product_uom_qty',
-                    'name',           # Descripción de la línea
-                    'price_unit',     # Precio unitario
-                    'price_subtotal'  # Subtotal
-                ]
-            )
-            progress_bar.progress(50, text="Líneas de orden cargadas...")
-
-            # Diccionarios para acceso rápido
-            first_lines_dict = {line['id']: line for line in first_lines}
-
-            product_ids = list(set(line['product_id'][0] for line in first_lines))
-            products = odoo.search_read(
-                'product.template',
-                domain=[('id', 'in', product_ids)],
-                fields=['id', 
-                        'name',
-                        'default_code',              # Código del producto
-                        'list_price',                
-                        'x_studio_comision_agencia',
-                        'x_studio_destino',
-                        'x_studio_tipo_de_cupo'
-                       ]
-            )
-            products_dict = {prod['id']: prod for prod in products}
-
-            progress_bar.progress(75, text="Productos cargados...")
-
-            # Procesar órdenes
-            orders_data = []
-            for order in orders:
-                if order['order_line']:
-                    first_line = first_lines_dict.get(order['order_line'][0])
-                    if first_line:
-                        product = products_dict.get(first_line['product_id'][0])
-                        if product:
-                            comision_rate = product.get('x_studio_comision_agencia', 0)
-                            cantidad = first_line['product_uom_qty']
-                            comision = comision_rate * cantidad
-
-                            # Agregar a resumen de agencias
-                            team_id = order['team_id'][0] if order['team_id'] else 0
-                            team_name = order['team_id'][1] if order['team_id'] else 'Sin Agencia'
-
-
-                            orders_data.append({
-                                'Número': order['name'],
-                                'Cliente': order['partner_id'][1] if order['partner_id'] else 'Sin cliente',
-                                'Fecha': datetime.strptime(order['date_order'], "%Y-%m-%d %H:%M:%S").strftime("%Y-%m-%d %H:%M"),
-                                'Producto': product.get('name', 'Sin nombre'),
-                                'Destino': product.get('x_studio_destino', 'Sin destino'),
-                                'Tipo de Cupo': product.get('x_studio_tipo_de_cupo', 'No definido'),  # Ya no necesitamos el mapping
-                                'Estado Facturación': INVOICE_STATUS[order['invoice_status']],
-                                'Agencia': team_name,
-                                'Vendedor': order['user_id'][1] if order['user_id'] else 'Sin asignar',
-                                'Cantidad': int(cantidad),
-                                'Comision': float(comision),
-                                'Total': float(order['amount_total']),
-                                'ID': int(order['id'])
-                            })
-                            
-            # Antes del filtro, veamos los tipos de cupo que tenemos
-            # Y modificar el filtro
-            if tipo_cupo_seleccionado:
-                orders_data = [
-                    order for order in orders_data 
-                    if order['Tipo de Cupo'] == tipo_cupo_seleccionado
-                ]
+    with st.spinner('Cargando órdenes del año actual...'):
+        # Cargar datos del año actual
+        orders_data, resumen_agencias = load_orders_data(odoo, domain, fields, tipo_cupo_seleccionado)
+        progress_bar.progress(50, text="Datos del año actual cargados...")
+        
+        # Cargar datos del año anterior si está habilitada la comparación
+        orders_data_prev = []
+        resumen_agencias_prev = {}
+        
+        # Calcular fechas del año anterior (siempre definidas)
+        fecha_inicio_prev = fecha_inicio_selected.replace(year=fecha_inicio_selected.year - 1)
+        fecha_fin_prev = fecha_fin_selected.replace(year=fecha_fin_selected.year - 1)
+        
+        if comparar_año_anterior:
             
-
-            progress_bar.progress(100, text="¡Completado!")
-
-            # Agregar esto después de procesar los orders_data y antes de mostrar la tabla de resumen
-            # DESPUÉS del filtro, calculamos el resumen por agencias
+            # Crear dominio para el año anterior
+            domain_prev = [
+                ("date_order", ">=", f"{fecha_inicio_prev} 00:00:00"),
+                ("date_order", "<=", f"{fecha_fin_prev} 23:59:59"),
+                ("invoice_status", "in", estado_facturacion)
+            ]
             
-            resumen_agencias = {}
-            for order in orders_data:  # Usamos orders_data filtrado
-                team_id = order['Agencia']  # Ya tenemos el nombre de la agencia en orders_data
+            # Agregar filtro de agencia si no es "Todos"
+            if agencia_seleccionada != 0:
+                domain_prev.append(("team_id", "=", agencia_seleccionada))
+            
+            with st.spinner('Cargando órdenes del año anterior...'):
+                orders_data_prev, resumen_agencias_prev = load_orders_data(odoo, domain_prev, fields, tipo_cupo_seleccionado)
+                progress_bar.progress(75, text="Datos del año anterior cargados...")
+        
+        progress_bar.progress(100, text="¡Completado!")
 
-                if team_id not in resumen_agencias:
-                    resumen_agencias[team_id] = {
-                        'Agencia': team_id,
-                        'Total Órdenes': 0,
-                        'Total Pasajeros': 0,
-                        'Total Comisiones': 0,
-                        'Total Vendido': 0
-                    }
+        if orders_data or orders_data_prev:
 
-                resumen_agencias[team_id]['Total Órdenes'] += 1
-                resumen_agencias[team_id]['Total Pasajeros'] += order['Cantidad']
-                resumen_agencias[team_id]['Total Comisiones'] += order['Comision']
-                resumen_agencias[team_id]['Total Vendido'] += order['Total']
-
-            # Calcular métricas globales
+            # Calcular métricas globales del año actual
             total_ordenes = len(orders_data)
             total_pasajeros = sum(resumen['Total Pasajeros'] for resumen in resumen_agencias.values())
             total_comisiones = sum(resumen['Total Comisiones'] for resumen in resumen_agencias.values())
             total_ventas = sum(resumen['Total Vendido'] for resumen in resumen_agencias.values())
 
+            # Calcular métricas del año anterior si está habilitada la comparación
+            if comparar_año_anterior:
+                total_ordenes_prev = len(orders_data_prev)
+                total_pasajeros_prev = sum(resumen['Total Pasajeros'] for resumen in resumen_agencias_prev.values())
+                total_comisiones_prev = sum(resumen['Total Comisiones'] for resumen in resumen_agencias_prev.values())
+                total_ventas_prev = sum(resumen['Total Vendido'] for resumen in resumen_agencias_prev.values())
+                
+                # Calcular diferencias
+                delta_ordenes = total_ordenes - total_ordenes_prev
+                delta_pasajeros = total_pasajeros - total_pasajeros_prev
+                delta_comisiones = total_comisiones - total_comisiones_prev
+                delta_ventas = total_ventas - total_ventas_prev
+            else:
+                delta_ordenes = delta_pasajeros = delta_comisiones = delta_ventas = None
+
             # Mostrar métricas en fila
-            st.write("### Resumen General")
+            periodo_actual = f"{fecha_inicio_selected.strftime('%Y-%m-%d')} a {fecha_fin_selected.strftime('%Y-%m-%d')}"
+            if comparar_año_anterior:
+                st.write(f"### Resumen General - Comparación Anual")
+                st.write(f"**Período Actual:** {periodo_actual}")
+                st.write(f"**Período Anterior:** {fecha_inicio_prev.strftime('%Y-%m-%d')} a {fecha_fin_prev.strftime('%Y-%m-%d')}")
+            else:
+                st.write(f"### Resumen General - {periodo_actual}")
+            
             col1, col2, col3, col4 = st.columns(4)
 
             with col1:
                 st.metric(
                     label="Total Órdenes",
-                    value=format_currency(total_ordenes, 0)
+                    value=format_currency(total_ordenes, 0),
+                    delta=f"{delta_ordenes:+}" if delta_ordenes is not None else None
                 )
 
             with col2:
                 st.metric(
                     label="Total Pasajeros",
-                    value=format_currency(total_pasajeros, 0)
+                    value=format_currency(total_pasajeros, 0),
+                    delta=f"{delta_pasajeros:+}" if delta_pasajeros is not None else None
                 )
 
             with col3:
                 st.metric(
                     label="Total Comisiones",
-                    value=f"CLP {format_currency(total_comisiones, 0)}"
+                    value=f"CLP {format_currency(total_comisiones, 0)}",
+                    delta=f"CLP {format_currency(delta_comisiones, 0)}" if delta_comisiones is not None else None
                 )
 
             with col4:
                 st.metric(
                     label="Total Ventas",
-                    value=f"CLP {format_currency(total_ventas, 0)}"
+                    value=f"CLP {format_currency(total_ventas, 0)}",
+                    delta=f"CLP {format_currency(delta_ventas, 0)}" if delta_ventas is not None else None
                 )
 
             # Agregar un separador
@@ -324,15 +395,53 @@ try:
             
             # Tabla de resumen por agencia
             st.subheader("Resumen por Agencia")
-            df_resumen = pd.DataFrame(list(resumen_agencias.values()))
-            df_resumen['Total Comisiones'] = df_resumen['Total Comisiones'].apply(lambda x: f"CLP {format_currency(x, 0)}")
-            df_resumen['Total Vendido'] = df_resumen['Total Vendido'].apply(lambda x: f"CLP {format_currency(x, 0)}")
+            
+            if comparar_año_anterior and resumen_agencias_prev:
+                # Crear DataFrame combinado para comparación
+                df_actual = pd.DataFrame(list(resumen_agencias.values()))
+                df_anterior = pd.DataFrame(list(resumen_agencias_prev.values()))
+                
+                # Renombrar columnas para identificar el año
+                df_actual = df_actual.rename(columns={
+                    'Total Órdenes': f'Órdenes {fecha_inicio_selected.year}',
+                    'Total Pasajeros': f'Pasajeros {fecha_inicio_selected.year}',
+                    'Total Comisiones': f'Comisiones {fecha_inicio_selected.year}',
+                    'Total Vendido': f'Vendido {fecha_inicio_selected.year}'
+                })
+                
+                df_anterior = df_anterior.rename(columns={
+                    'Total Órdenes': f'Órdenes {fecha_inicio_prev.year}',
+                    'Total Pasajeros': f'Pasajeros {fecha_inicio_prev.year}',
+                    'Total Comisiones': f'Comisiones {fecha_inicio_prev.year}',
+                    'Total Vendido': f'Vendido {fecha_inicio_prev.year}'
+                })
+                
+                # Combinar DataFrames
+                df_resumen = pd.merge(df_actual, df_anterior, on='Agencia', how='outer').fillna(0)
+                
+                # Calcular diferencias
+                df_resumen[f'Δ Órdenes'] = df_resumen[f'Órdenes {fecha_inicio_selected.year}'] - df_resumen[f'Órdenes {fecha_inicio_prev.year}']
+                df_resumen[f'Δ Pasajeros'] = df_resumen[f'Pasajeros {fecha_inicio_selected.year}'] - df_resumen[f'Pasajeros {fecha_inicio_prev.year}']
+                df_resumen[f'Δ Comisiones'] = df_resumen[f'Comisiones {fecha_inicio_selected.year}'] - df_resumen[f'Comisiones {fecha_inicio_prev.year}']
+                df_resumen[f'Δ Vendido'] = df_resumen[f'Vendido {fecha_inicio_selected.year}'] - df_resumen[f'Vendido {fecha_inicio_prev.year}']
+                
+                # Formatear columnas de moneda
+                for col in df_resumen.columns:
+                    if 'Comisiones' in col or 'Vendido' in col:
+                        df_resumen[col] = df_resumen[col].apply(lambda x: f"CLP {format_currency(x, 0)}")
+                
+            else:
+                # Tabla normal sin comparación
+                df_resumen = pd.DataFrame(list(resumen_agencias.values()))
+                df_resumen['Total Comisiones'] = df_resumen['Total Comisiones'].apply(lambda x: f"CLP {format_currency(x, 0)}")
+                df_resumen['Total Vendido'] = df_resumen['Total Vendido'].apply(lambda x: f"CLP {format_currency(x, 0)}")
 
             # Botón para descargar resumen
+            filename = "resumen_agencias_comparacion.csv" if comparar_año_anterior else "resumen_agencias.csv"
             st.download_button(
                 label="📥 Descargar Resumen por Agencia",
                 data=to_csv(df_resumen),
-                file_name="resumen_agencias.csv",
+                file_name=filename,
                 mime="text/csv"
             )
 
@@ -346,44 +455,74 @@ try:
 
             # Crear DataFrame de órdenes
             st.subheader("Órdenes")
-            df_orders = pd.DataFrame(orders_data)
-            # Debug: mostrar información sobre los datos
-            # st.write("DEBUG - Columnas disponibles:", df_orders.columns.tolist())
-            # st.write("DEBUG - Cantidad de registros:", len(df_orders))
-            # st.write("DEBUG - Muestra de orders_data:", orders_data[:1] if orders_data else "Sin datos")
+            
+            # Combinar órdenes del año actual y anterior si está habilitada la comparación
+            all_orders_data = orders_data.copy()
+            
+            if comparar_año_anterior and orders_data_prev:
+                # Agregar columna de año para identificar las órdenes
+                for order in all_orders_data:
+                    order['Año'] = fecha_inicio_selected.year
+                
+                orders_prev_with_year = orders_data_prev.copy()
+                for order in orders_prev_with_year:
+                    order['Año'] = fecha_inicio_prev.year
+                
+                # Combinar todas las órdenes
+                all_orders_data.extend(orders_prev_with_year)
+            
+            df_orders = pd.DataFrame(all_orders_data)
 
-            if not orders_data:
-                st.warning("No hay datos para mostrar")
+            if df_orders.empty:
+                st.warning("No hay órdenes para mostrar con los filtros seleccionados")
             else:
                 # Formatear columnas de manera segura
-                for row in df_orders.index:
-                    if 'Comision' in df_orders.columns:
-                        valor_comision = df_orders.at[row, 'Comision']
-                        df_orders.at[row, 'Comision'] = f"CLP {format_currency(float(valor_comision), 0)}"
+                df_orders_display = df_orders.copy()
+                
+                # Formatear columnas monetarias
+                if 'Comision' in df_orders_display.columns:
+                    df_orders_display['Comision'] = df_orders_display['Comision'].apply(
+                        lambda x: f"CLP {format_currency(float(x), 0)}" if pd.notna(x) else "CLP 0"
+                    )
 
-                    if 'Total' in df_orders.columns:
-                        valor_total = df_orders.at[row, 'Total']
-                        df_orders.at[row, 'Total'] = f"CLP {format_currency(float(valor_total), 0)}"
+                if 'Total' in df_orders_display.columns:
+                    df_orders_display['Total'] = df_orders_display['Total'].apply(
+                        lambda x: f"CLP {format_currency(float(x), 0)}" if pd.notna(x) else "CLP 0"
+                    )
+                
+                # Reordenar columnas para mostrar el año al principio si hay comparación
+                if comparar_año_anterior and 'Año' in df_orders_display.columns:
+                    cols = ['Año'] + [col for col in df_orders_display.columns if col != 'Año' and col != 'ID']
+                    df_orders_display = df_orders_display[cols]
+                else:
+                    # Remover columna ID para la visualización
+                    if 'ID' in df_orders_display.columns:
+                        df_orders_display = df_orders_display.drop('ID', axis=1)
 
+                # Botón para descargar órdenes
+                filename = "ordenes_comparacion.csv" if comparar_año_anterior else "ordenes.csv"
+                st.download_button(
+                    label="📥 Descargar Órdenes",
+                    data=to_csv(df_orders_display),
+                    file_name=filename,
+                    mime="text/csv"
+                )
 
-
-            
-
-            # Botón para descargar órdenes
-            st.download_button(
-                label="📥 Descargar Órdenes",
-                data=to_csv(df_orders.drop('ID', axis=1)),
-                file_name="ordenes.csv",
-                mime="text/csv"
-            )
-
-            # Mostrar tabla de órdenes
-            selected_order = st.data_editor(
-                df_orders.drop('ID', axis=1),
-                use_container_width=True,
-                disabled=True,
-                key="orders_table"
-            )
+                # Mostrar tabla de órdenes
+                selected_order = st.data_editor(
+                    df_orders_display,
+                    use_container_width=True,
+                    disabled=True,
+                    key="orders_table"
+                )
+                
+                # Mostrar información adicional
+                if comparar_año_anterior:
+                    ordenes_actuales = len([o for o in all_orders_data if o.get('Año') == fecha_inicio_selected.year])
+                    ordenes_anteriores = len([o for o in all_orders_data if o.get('Año') == fecha_inicio_prev.year])
+                    st.info(f"Mostrando {ordenes_actuales} órdenes de {fecha_inicio_selected.year} y {ordenes_anteriores} órdenes de {fecha_inicio_prev.year}")
+                else:
+                    st.info(f"Mostrando {len(df_orders_display)} órdenes del período seleccionado")
 
 
         else:
