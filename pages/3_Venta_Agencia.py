@@ -46,7 +46,7 @@ def to_csv(df):
     """Convierte DataFrame a CSV"""
     return df.to_csv(index=False).encode('utf-8')
 
-def load_orders_data(odoo, domain, fields, tipo_cupo_seleccionado):
+def load_orders_data(odoo, domain, fields, tipos_cupo_seleccionados):
     """Carga y procesa los datos de órdenes"""
     orders = odoo.search_read('sale.order', domain=domain, fields=fields)
     
@@ -101,6 +101,7 @@ def load_orders_data(odoo, domain, fields, tipo_cupo_seleccionado):
     # Procesar órdenes
     orders_data = []
     resumen_agencias = {}
+    ordenes_procesadas_por_agencia = {}  # Para evitar contar la misma orden múltiples veces
     
     for order in orders:
         order_lines = lines_by_order.get(order['id'], [])
@@ -116,15 +117,22 @@ def load_orders_data(odoo, domain, fields, tipo_cupo_seleccionado):
                 'Total Comisiones': 0,
                 'Total Vendido': 0
             }
+            ordenes_procesadas_por_agencia[team_name] = set()
+        
+        # Variable para verificar si la orden tiene líneas válidas (que pasen el filtro)
+        orden_tiene_lineas_validas = False
         
         # Procesar cada línea de la orden
         for line in order_lines:
             if line['product_id']:
                 product = products_dict.get(line['product_id'][0])
                 if product:
-                    # Filtrar por tipo de cupo si está seleccionado
-                    if tipo_cupo_seleccionado and product.get('x_studio_tipo_de_cupo') != tipo_cupo_seleccionado:
+                    # Filtrar por tipo de cupo si hay selecciones
+                    if tipos_cupo_seleccionados and product.get('x_studio_tipo_de_cupo') not in tipos_cupo_seleccionados:
                         continue
+                    
+                    # Marcar que la orden tiene al menos una línea válida
+                    orden_tiene_lineas_validas = True
                     
                     comision_rate = product.get('x_studio_comision_agencia', 0)
                     cantidad = line['product_uom_qty']
@@ -151,9 +159,10 @@ def load_orders_data(odoo, domain, fields, tipo_cupo_seleccionado):
                     resumen_agencias[team_name]['Total Comisiones'] += comision
                     resumen_agencias[team_name]['Total Vendido'] += line['price_subtotal']
         
-        # Contar la orden solo una vez por agencia
-        if order_lines:  # Solo si tiene líneas válidas
+        # Contar la orden solo una vez por agencia y solo si tiene líneas válidas
+        if orden_tiene_lineas_validas and order['id'] not in ordenes_procesadas_por_agencia[team_name]:
             resumen_agencias[team_name]['Total Órdenes'] += 1
+            ordenes_procesadas_por_agencia[team_name].add(order['id'])
     
     return orders_data, resumen_agencias
 
@@ -226,11 +235,13 @@ try:
             }
             
             st.subheader("Tipo de Cupo")
-            tipo_cupo_seleccionado = st.selectbox(
-                "Seleccionar Tipo de Cupo",
+            tipos_cupo_seleccionados = st.multiselect(
+                "Seleccionar Tipos de Cupo",
                 options=list(TIPO_CUPO.keys()),
+                default=['Regular', 'Sin Subsidio'],
                 format_func=lambda x: TIPO_CUPO[x],
-                key="tipo_cupo"
+                key="tipos_cupo",
+                help="Seleccione uno o más tipos de cupo"
             )
         
         # Tercera fila para comparación con año anterior
@@ -296,7 +307,7 @@ try:
 
     with st.spinner('Cargando órdenes del año actual...'):
         # Cargar datos del año actual
-        orders_data, resumen_agencias = load_orders_data(odoo, domain, fields, tipo_cupo_seleccionado)
+        orders_data, resumen_agencias = load_orders_data(odoo, domain, fields, tipos_cupo_seleccionados)
         progress_bar.progress(50, text="Datos del año actual cargados...")
         
         # Cargar datos del año anterior si está habilitada la comparación
@@ -321,7 +332,7 @@ try:
                 domain_prev.append(("team_id", "=", agencia_seleccionada))
             
             with st.spinner('Cargando órdenes del año anterior...'):
-                orders_data_prev, resumen_agencias_prev = load_orders_data(odoo, domain_prev, fields, tipo_cupo_seleccionado)
+                orders_data_prev, resumen_agencias_prev = load_orders_data(odoo, domain_prev, fields, tipos_cupo_seleccionados)
                 progress_bar.progress(75, text="Datos del año anterior cargados...")
         
         progress_bar.progress(100, text="¡Completado!")
@@ -378,14 +389,14 @@ try:
                 st.metric(
                     label="Total Comisiones",
                     value=f"CLP {format_currency(total_comisiones, 0)}",
-                    delta=f"CLP {format_currency(delta_comisiones, 0)}" if delta_comisiones is not None else None
+                    delta=f"{delta_comisiones:+,.0f}" if delta_comisiones is not None else None
                 )
 
             with col4:
                 st.metric(
                     label="Total Ventas",
                     value=f"CLP {format_currency(total_ventas, 0)}",
-                    delta=f"CLP {format_currency(delta_ventas, 0)}" if delta_ventas is not None else None
+                    delta=f"{delta_ventas:+,.0f}" if delta_ventas is not None else None
                 )
 
             # Agregar un separador
