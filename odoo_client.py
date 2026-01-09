@@ -82,6 +82,25 @@ class OdooClient:
             print(f"Error durante la inicialización: {str(e)}")
             raise
 
+    def fields_get(self, model, attributes=None):
+        """Obtiene metadatos de campos del modelo (útil para compatibilidad entre versiones)."""
+        if attributes is None:
+            attributes = ['string', 'type', 'relation']
+
+        try:
+            return self._jsonrpc('/web/dataset/call_kw', {
+                'model': model,
+                'method': 'fields_get',
+                'args': [],
+                'kwargs': {
+                    'attributes': attributes,
+                },
+                'context': {'lang': 'es_ES'}
+            })
+        except Exception as e:
+            print(f"Error en fields_get para modelo {model}: {str(e)}")
+            raise
+
     def _jsonrpc(self, endpoint, params=None):
         """Ejecuta una llamada JSON-RPC a Odoo con reintentos"""
         headers = {
